@@ -2284,7 +2284,7 @@ const JSONValidator = {
         p2:     c.p2,
         cidade: (c.estado||'') + '/' + (c.estado||''),
         site:   'OLX',
-        url:    c.url || '',
+        url:    (c.url && c.url.startsWith('http')) ? c.url : '',
         particular: true,
         titulo: c.modelo + ' ' + c.ano,
         status: 'pf_pending',
@@ -5712,6 +5712,15 @@ Se sweep retornar poucos resultados:
 PRECISÃO > VOLUME — sempre.
 Filtros só mudam por patch manual explícito do operador. Nunca por decisão autônoma.
 
+URL_OBRIGATÓRIA = true (regra estrutural permanente)
+Todo candidato no JSON DEVE ter:
+  "url": "https://..." (URL real e completa do anúncio no portal)
+Se URL não estiver disponível:
+  → NÃO incluir o candidato no JSON
+  → NÃO usar url: "" ou url: null
+  → NÃO usar URL parcial ou estimada
+Candidato sem URL válida = candidato inválido = descartar silenciosamente.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PRINCÍPIOS ABSOLUTOS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -6209,6 +6218,7 @@ POLICY_ENGINE = {
     },
 
     FILOSOFIA: "O sistema mapeia o mercado correto · preserva qualidade do dataset · protege o padrão 1903 · mantém consistência histórica · evita deriva operacional",
+    URL_OBRIGATORIA: true, // candidato sem URL real = inválido = descartar
   },
 
   WEBMOTORS_PF_FILTER_UNTRUSTED:  true,
