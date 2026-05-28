@@ -820,14 +820,6 @@ body{overflow-x:hidden;font-family:'DM Sans',sans-serif;background:var(--bg);col
         </div>
       </div>
 
-      <!-- AutoSync Status -->
-      <div style="margin-bottom:.6rem;padding:.5rem .75rem;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <span style="font-size:.62rem;color:var(--text3);text-transform:uppercase;letter-spacing:.07em">Auto-Sync Cowork</span>
-          <div id="autosync-status" style="font-size:.65rem;color:#22C55E;margin-top:2px">● Monitorando · verifica a cada 30s</div>
-        </div>
-        <button onclick="AutoSyncEngine.check()" style="font-size:.6rem;padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer">↻ Checar</button>
-      </div>
 
       <div style="font-size:.62rem;color:var(--text3);font-family:'DM Sans',sans-serif;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.4rem">
           Source Reputation · portal_data_quality_score
@@ -3378,149 +3370,7 @@ function carregarCanaryB() {
   MarketSegmentEngine.seedF2Observations();
   updateStagingBar();
 
-  // ── AUTO-SYNC ENGINE ──
-  // Monitora localStorage para JSONs depositados pelo Cowork
-  const AutoSyncEngine = {
-    KEY_PENDING:  '1903_cowork_pending_json',
-    TOOL_URL:     'https://1903toolbyale.netlify.app',
-    KEY_LAST_RUN: '1903_cowork_last_run',
-    POLL_MS:      30000, // checar a cada 30s
-    _timer: null,
 
-    start() {
-      this.stop();
-      this._timer = setInterval(() => this.check(), this.POLL_MS);
-      console.log('[AutoSync] monitorando localStorage...');
-    },
-
-    stop() {
-      if(this._timer) { clearInterval(this._timer); this._timer = null; }
-    },
-
-    check() {
-      try {
-        const raw = localStorage.getItem(this.KEY_PENDING);
-        if(!raw) return;
-        const payload = JSON.parse(raw);
-        if(!payload || !payload.candidates?.length) return;
-        // Show approval toast
-        this.showApprovalBanner(payload);
-      } catch(e) {}
-    },
-
-    showApprovalBanner(payload) {
-      // Remove existing banner
-      const old = document.getElementById('autosync-banner');
-      if(old) old.remove();
-
-      const count = payload.candidates?.length || 0;
-      const runId = payload.runId || 'novo sweep';
-      const ts    = payload.generatedAt ? new Date(payload.generatedAt).toLocaleTimeString('pt-BR') : '';
-
-      const banner = document.createElement('div');
-      banner.id = 'autosync-banner';
-      banner.style.cssText = 'position:fixed;bottom:1rem;right:1rem;z-index:9999;background:var(--surface);border:2px solid #22C55E;border-radius:12px;padding:1rem 1.25rem;max-width:320px;box-shadow:0 4px 24px rgba(0,0,0,.4);font-family:"DM Sans",sans-serif';
-      banner.innerHTML = `
-        <div style="font-size:.75rem;font-weight:700;color:#22C55E;margin-bottom:.4rem">🔄 Novos dados do Cowork</div>
-        <div style="font-size:.7rem;color:var(--text2);margin-bottom:.75rem">
-          <strong>${count}</strong> candidatos encontrados${ts ? ' às ' + ts : ''}<br>
-          <span style="font-size:.62rem;color:var(--text3)">${runId}</span>
-        </div>
-        <div style="display:flex;gap:.5rem">
-          <button onclick="AutoSyncEngine.approve()" style="flex:1;padding:.35rem .5rem;background:#22C55E;color:#fff;border:none;border-radius:6px;font-size:.68rem;font-weight:700;cursor:pointer">
-            ✅ Importar agora
-          </button>
-          <button onclick="AutoSyncEngine.dismiss()" style="flex:1;padding:.35rem .5rem;background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:6px;font-size:.68rem;cursor:pointer">
-            ✕ Ignorar
-          </button>
-        </div>
-      `;
-      document.body.appendChild(banner);
-    },
-
-    approve() {
-      try {
-        const raw = localStorage.getItem(this.KEY_PENDING);
-        if(!raw) return;
-        const payload = JSON.parse(raw);
-        // Import into ferramenta
-        const textarea = document.getElementById('json-input');
-        if(textarea) {
-          // Normalize to candidates array
-          const rawCandidates = payload.candidates || payload.top_candidates_ranked || [];
-
-          // 1. Dedup
-          const { fresh, duplicates } = DuplicateGuard.filter(rawCandidates);
-          if(duplicates.length) {
-            console.log('[DuplicateGuard] ' + duplicates.length + ' duplicatas ignoradas:', duplicates.map(d=>d.id));
-          }
-
-          // 2. Rate limit via staging
-          const { ready, queued } = ImportStaging.stage(fresh);
-
-          textarea.value = JSON.stringify(ready, null, 2);
-          confirmarImportacao().then(() => {
-            let msg = '✅ ' + ready.length + ' candidatos importados';
-            if(duplicates.length) msg += ' · ' + duplicates.length + ' duplicatas ignoradas';
-            if(queued > 0) msg += ' · ' + queued + ' em staging';
-            toast(msg);
-            localStorage.removeItem(this.KEY_PENDING);
-            const banner = document.getElementById('autosync-banner');
-            if(banner) banner.remove();
-            // Show staging flush button if needed
-            updateStagingBar();
-          }).catch(e => toast('❌ Erro na importação: ' + e.message));
-        }
-      } catch(e) { toast('❌ Erro AutoSync: ' + e.message); }
-    },
-
-    dismiss() {
-      localStorage.removeItem(this.KEY_PENDING);
-      const banner = document.getElementById('autosync-banner');
-      if(banner) banner.remove();
-    },
-
-    _showStagingNotice(queued) {
-      const old = document.getElementById('staging-notice');
-      if(old) old.remove();
-      const el = document.createElement('div');
-      el.id = 'staging-notice';
-      el.style.cssText = 'position:fixed;bottom:1rem;left:1rem;z-index:9998;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.6rem 1rem;font-family:"DM Sans",sans-serif;font-size:.68rem;color:var(--text2)';
-      el.innerHTML = queued + ' candidatos em staging <button onclick="AutoSyncEngine.flushStaging()" style="margin-left:.5rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-size:.65rem">Importar próximos</button>';
-      document.body.appendChild(el);
-    },
-
-    flushStaging() {
-      const { batch, remaining } = ImportStaging.flush();
-      if(!batch.length) { toast('Staging vazio'); return; }
-      const textarea = document.getElementById('json-input');
-      if(textarea) {
-        textarea.value = JSON.stringify(batch, null, 2);
-        confirmarImportacao().then(() => {
-          toast('✅ ' + batch.length + ' importados · ' + remaining + ' restantes em staging');
-          updateStagingBar();
-        });
-      }
-    },
-
-    // Called by Cowork to deposit JSON
-    deposit(jsonData) {
-      localStorage.setItem(this.KEY_PENDING, JSON.stringify(jsonData));
-      localStorage.setItem(this.KEY_LAST_RUN, new Date().toISOString());
-    },
-  };
-
-  window.AutoSyncEngine = AutoSyncEngine;
-  AutoSyncEngine.start();
-
-  // Reconcile any deposits that arrived before AutoSyncEngine was ready
-  if(window.PendingDepositsQueue?.length) {
-    console.log('[AutoSync] reconciling ' + window.PendingDepositsQueue.length + ' pending deposits');
-    window.PendingDepositsQueue.forEach(batch => {
-      try { AutoSyncEngine.deposit(batch); } catch(e) {}
-    });
-    window.PendingDepositsQueue.length = 0;
-  }
 
   // ── COWORK OPERATION MODE ──
   window.COWORK_MODE = localStorage.getItem('1903_cowork_mode') || 'HUMAN_DECISION';
@@ -4182,41 +4032,8 @@ function toggleStagingView() {
 }
 
 function promoverStagingLote() {
-  AutoSyncEngine.flushStaging();
+  promoverStagingLote();
 }
-
-// ── PENDING DEPOSITS QUEUE ──
-// Usado pelo Cowork quando a aba da ferramenta não está aberta ainda.
-// Cowork faz: window.PendingDepositsQueue.push(batch)
-// Quando a ferramenta abre, reconcilia automaticamente.
-window.PendingDepositsQueue = window.PendingDepositsQueue || [];
-
-// Intercept pushes — reconcile immediately if AutoSyncEngine is ready
-(function() {
-  const _q = [];
-  Object.defineProperty(window, 'PendingDepositsQueue', {
-    get() { return _q; },
-    set(v) { if(Array.isArray(v)) _q.push(...v); },
-    configurable: true,
-  });
-
-  // Override push to auto-reconcile
-  const origPush = _q.push.bind(_q);
-  _q.push = function(batch) {
-    origPush(batch);
-    console.log('[AutoSync] tool_tab_missing → pending deposit queued (' + (batch?.candidates?.length || batch?.length || 0) + ' candidates)');
-    // Try to reconcile if AutoSyncEngine is already available
-    if(window.AutoSyncEngine?.deposit) {
-      try {
-        window.AutoSyncEngine.deposit(batch);
-        _q.splice(_q.indexOf(batch), 1);
-        console.log('[AutoSync] reconciled immediately');
-      } catch(e) {
-        console.log('[AutoSync] reconcile deferred:', e.message);
-      }
-    }
-  };
-})();
 
 document.addEventListener('DOMContentLoaded',()=>{
   const bdT=document.getElementById('bloco-triumph');
@@ -5016,25 +4833,7 @@ PRECISION_OVER_VOLUME=true · HARD_RULES=OPERATOR_LOCKED
 Estado terminal único: MERCADO_MAPEADO
 Sem outreach · sem drafts · sem chat · sem automação de mensagens
 
-AUTO-SYNC COM FERRAMENTA:
-Após cada varredura completa, depositar JSON no localStorage da aba da ferramenta:
-
-  // Executar no Console do browser com a ferramenta aberta:
-  window.AutoSyncEngine.deposit({
-    runId: "[runId]",
-    generatedAt: new Date().toISOString(),
-    mode: "FULL_GLOBAL_SWEEP",
-    candidates: [ ...array de candidatos normalizados... ]
-  });
-
-Ou colar o JSON no campo "Importar JSON do Cowork" da ferramenta.
-A ferramenta detecta automaticamente e pergunta: "Importar agora?"
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CADÊNCIA: 1 sweep completo por hora.
-Após cada sweep, entregar JSON consolidado ao operador para importação manual.
-Operador importa via 'Importar JSON do Cowork' na ferramenta.
-
 EXECUTE FULL_GLOBAL_SWEEP NOW.
 DO NOT WAIT FOR FURTHER INSTRUCTIONS.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━` : '';
