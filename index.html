@@ -3377,8 +3377,6 @@ function carregarCanaryB() {
   // Monitora localStorage para JSONs depositados pelo Cowork
   const AutoSyncEngine = {
     KEY_PENDING:  '1903_cowork_pending_json',
-    // Cowork: usar window.localStorage.setItem('1903_cowork_pending_json', JSON.stringify(payload))
-    // ou: window.PendingDepositsQueue.push(batch) se ferramenta estiver na mesma aba
     KEY_LAST_RUN: '1903_cowork_last_run',
     POLL_MS:      30000, // checar a cada 30s
     _timer: null,
