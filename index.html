@@ -2061,10 +2061,15 @@ const ResultEngine = {
 
       <!-- Ações -->
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;padding-left:.25rem">
-        <a href="${a.url}" target="_blank"
-          style="font-size:.72rem;font-family:'DM Sans',sans-serif;font-weight:600;padding:5px 14px;border-radius:var(--r);background:var(--orange);color:#fff;text-decoration:none;white-space:nowrap">
-          Abrir anúncio ↗
-        </a>
+        ${(a.url && a.url.startsWith('http')) ?
+          `<a href="${a.url}" target="_blank" rel="noopener noreferrer"
+            style="font-size:.72rem;font-family:'DM Sans',sans-serif;font-weight:600;padding:5px 14px;border-radius:var(--r);background:var(--orange);color:#fff;text-decoration:none;white-space:nowrap">
+            Abrir anúncio ↗
+          </a>` :
+          `<span style="font-size:.72rem;font-family:'DM Sans',sans-serif;font-weight:600;padding:5px 14px;border-radius:var(--r);background:var(--surface2);color:var(--text3);white-space:nowrap">
+            URL pendente
+          </span>`
+        }
         <button onclick="processarProposta('${a.id}')"
           style="font-size:.72rem;font-family:'DM Sans',sans-serif;font-weight:600;padding:5px 14px;border-radius:var(--r);border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;white-space:nowrap">
           💬 Enviar proposta
@@ -3377,6 +3382,7 @@ function carregarCanaryB() {
   // Monitora localStorage para JSONs depositados pelo Cowork
   const AutoSyncEngine = {
     KEY_PENDING:  '1903_cowork_pending_json',
+    TOOL_URL:     'https://1903toolbyale.netlify.app',
     KEY_LAST_RUN: '1903_cowork_last_run',
     POLL_MS:      30000, // checar a cada 30s
     _timer: null,
