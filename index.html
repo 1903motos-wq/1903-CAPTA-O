@@ -2220,6 +2220,89 @@ const JSONValidator = {
   MAX_ITEMS: 500,
   URL_PATTERN: /^https?:\/\/.+/,
 
+  // Recover truncated JSON by extracting complete objects
+  _recoverTruncated(raw) {
+    try {
+      // Try to find top_candidates_ranked array and extract complete objects
+      const arrayMatch = raw.match(/"top_candidates_ranked"\s*:\s*\[/);
+      const simpleArrayMatch = raw.match(/^\s*\[/);
+      
+      let arrayStart = -1;
+      let isTopCandidates = false;
+      
+      if(arrayMatch) {
+        arrayStart = raw.indexOf('[', raw.indexOf('"top_candidates_ranked"'));
+        isTopCandidates = true;
+      } else if(simpleArrayMatch) {
+        arrayStart = raw.indexOf('[');
+      }
+      
+      if(arrayStart < 0) return null;
+      
+      // Extract complete JSON objects from the array
+      const candidates = [];
+      let pos = arrayStart + 1;
+      let depth = 0;
+      let objStart = -1;
+      
+      while(pos < raw.length) {
+        const ch = raw[pos];
+        if(ch === '{') {
+          if(depth === 0) objStart = pos;
+          depth++;
+        } else if(ch === '}') {
+          depth--;
+          if(depth === 0 && objStart >= 0) {
+            try {
+              const obj = JSON.parse(raw.slice(objStart, pos+1));
+              candidates.push(obj);
+            } catch(e2) {}
+            objStart = -1;
+          }
+        }
+        pos++;
+      }
+      
+      if(!candidates.length) return null;
+      
+      // Try to recover envelope
+      let envelope = {};
+      try {
+        const runIdMatch = raw.match(/"runId"\s*:\s*"([^"]+)"/);
+        const modeMatch  = raw.match(/"mode"\s*:\s*"([^"]+)"/);
+        if(runIdMatch) envelope.runId = runIdMatch[1];
+        if(modeMatch)  envelope.mode  = modeMatch[1];
+      } catch(e3) {}
+      
+      envelope.terminalState = 'MERCADO_MAPEADO';
+      if(isTopCandidates) {
+        envelope.top_candidates_ranked = candidates;
+      } else {
+        envelope.candidates = candidates;
+      }
+      
+      return envelope;
+    } catch(e) { return null; }
+  },
+
+  // Model keyword map — URL or title must contain at least one keyword
+  MODEL_KEYWORDS: {
+    'Heritage Softail':    ['heritage','flhc','flhcs','flstc','flstf','softail-classic','heritage-classic'],
+    'Street Bob':          ['street-bob','street bob','fxdb','fxbbs','fxbb'],
+    'Softail Deluxe':      ['deluxe','flstn','flde'],
+    'Iron 883':            ['iron-883','iron 883','xl883n','883n','iron883','883'],
+    'Iron 1200':           ['iron-1200','iron 1200','xl1200ns','1200ns','iron1200'],
+    'Forty-Eight':         ['forty-eight','forty eight','xl1200x','1200x','48'],
+    'Sportster 1200 Custom':['1200 custom','xl1200c','sportster custom'],
+  },
+
+  _modelMatchesUrl(modelo, url, titulo) {
+    const keywords = this.MODEL_KEYWORDS[modelo];
+    if(!keywords) return true; // unknown model — pass through
+    const text = ((url||'') + ' ' + (titulo||'')).toLowerCase();
+    return keywords.some(kw => text.includes(kw));
+  },
+
   validateItem(item, index) {
     const errors = [];
     // Required fields
@@ -2229,6 +2312,25 @@ const JSONValidator = {
     // URL validation — aceita vazio (url pendente)
     if(item.url && item.url.trim() && !this.URL_PATTERN.test(item.url))
       errors.push(`[${index}] URL inválida: ${item.url}`);
+    if(item.modelo && item.url && item.url.startsWith('http')) {
+      if(!this._modelMatchesUrl(item.modelo, item.url||'', item.titulo||item.modelo||'')) {
+        // Hard reject only obvious wrong-model mismatches
+        const url_lower = (item.url||'').toLowerCase();
+        const WRONG_MODEL_SIGNALS = {
+          'Heritage Softail': ['fat-bob','fatbob','street-bob','street-glide','iron-883','iron-1200','forty-eight','deluxe','fat bob'],
+          'Street Bob':       ['fat-bob','heritage','street-glide','iron-883','iron-1200','forty-eight','deluxe'],
+          'Iron 883':         ['fat-bob','heritage','street-bob','street-glide','iron-1200','forty-eight','deluxe'],
+          'Iron 1200':        ['fat-bob','heritage','street-bob','street-glide','iron-883','forty-eight','deluxe'],
+          'Forty-Eight':      ['fat-bob','heritage','street-bob','street-glide','iron-883','iron-1200','deluxe'],
+          'Softail Deluxe':   ['fat-bob','heritage','street-bob','street-glide','iron-883','iron-1200','forty-eight'],
+        };
+        const wrongSignals = WRONG_MODEL_SIGNALS[item.modelo] || [];
+        const hasWrongModel = wrongSignals.some(s => url_lower.includes(s));
+        if(hasWrongModel) {
+          errors.push('[' + index + '] modelo "' + item.modelo + '" incompativel com URL — descartado');
+        }
+      }
+    }
     // Type checks
     if(item.km   && isNaN(Number(String(item.km).replace(/\D/g,''))))
       errors.push(`[${index}] km inválido: ${item.km}`);
@@ -2249,13 +2351,21 @@ const JSONValidator = {
 
   validate(raw) {
     const result = { valid: false, items: [], errors: [], warnings: [], stats: {} };
-    // Parse
+    // Parse — with truncation recovery
     let data;
+    let rawStr = typeof raw === 'string' ? raw.trim() : JSON.stringify(raw);
     try {
-      data = typeof raw === 'string' ? JSON.parse(raw.trim()) : raw;
+      data = JSON.parse(rawStr);
     } catch(e) {
-      result.errors.push('JSON inválido: ' + e.message);
-      return result;
+      // Try to recover truncated JSON by finding last complete candidate
+      const recovered = JSONValidator._recoverTruncated(rawStr);
+      if(recovered) {
+        data = recovered;
+        result.warnings.push('JSON truncado detectado — recuperados ' + (data.top_candidates_ranked||data.candidates||data).length + ' candidatos válidos');
+      } else {
+        result.errors.push('JSON inválido: ' + e.message);
+        return result;
+      }
     }
     // Accept multiple formats from Cowork
     let items = [];
@@ -2565,9 +2675,14 @@ async function runImportPipeline(rawJSON) {
   addLog('Etapa 2/6: Normalizando...');
   const normalized = validation.items.map(a => NormalizationEngine.normalize(a));
 
-  // Step 3: Deduplicate
+  // Step 2b: DuplicateGuard — cross-session dedup
+  const { fresh, duplicates: dupGuardDups } = DuplicateGuard.filter(normalized);
+  if(dupGuardDups.length) addLog(`DuplicateGuard: ${dupGuardDups.length} duplicatas cross-session removidas`);
+  fresh.forEach(c => DuplicateGuard.register(c));
+
+  // Step 3: Deduplicate (within-session)
   addLog('Etapa 3/6: Deduplicando...');
-  const unique = DedupEngine.deduplicate(normalized);
+  const unique = DedupEngine.deduplicate(fresh);
   addLog(`Dedup: ${normalized.length} → ${unique.length} únicos`);
 
   // Step 4: Score
@@ -2590,8 +2705,27 @@ async function runImportPipeline(rawJSON) {
 
   // Step 5: Persist
   addLog('Etapa 5/6: Persistindo no IndexedDB...');
-  const { saved, updated } = await StorageEngine.save(scored);
+  // Stage candidates — max 20 at a time, rest go to staging queue
+  const { ready: readyToSave, queued: stagedCount } = ImportStaging.stage(scored);
+  if(stagedCount > 0) addLog(`ImportStaging: ${readyToSave.length} prontos · ${stagedCount} em staging`);
+  const { saved, updated } = await StorageEngine.save(readyToSave);
   addLog(`Salvo: ${saved} novos, ${updated} atualizados`);
+  updateStagingBar();
+
+  // Step 5b: SourceHealth tracking
+  try {
+    const byPortalModel = {};
+    readyToSave.forEach(c => {
+      const key = (c.site||'OLX') + '_' + (c.modelo||'') + '_' + (c.cidade||'').slice(-2);
+      byPortalModel[key] = (byPortalModel[key]||0) + 1;
+    });
+    Object.entries(byPortalModel).forEach(([key, count]) => {
+      const [portal, ...rest] = key.split('_');
+      SourceHealth.record(portal, rest.join('_'), '', count, []);
+    });
+    const healthAlerts = SourceHealth.getAlerts();
+    if(healthAlerts.length) addLog(`SourceHealth: ${healthAlerts.length} alertas de portal`);
+  } catch(e) {}
 
   // Step 6: Post-processing
   addLog('Etapa 6/6: Analisando alertas e snapshots...');
