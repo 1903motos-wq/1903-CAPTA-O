@@ -655,6 +655,18 @@ body{overflow-x:hidden;font-family:'DM Sans',sans-serif;background:var(--bg);col
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem">
       <div class="sec-title" style="margin-bottom:0">
         Anúncios Coletados
+        <span id="badge-enviadas" style="font-size:.58rem;background:#F59E0B22;color:#F59E0B;border:1px solid #F59E0B;border-radius:20px;padding:1px 7px;margin-left:.4rem;vertical-align:middle;display:none">
+          📤 <span id="count-enviadas">0</span> enviadas
+        </span>
+        <select id="sort-select" onchange="ResultEngine.renderAll()"
+          style="font-size:.6rem;padding:2px 6px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;margin-left:.5rem;vertical-align:middle">
+          <option value="score_desc">↓ Maior score</option>
+          <option value="score_asc">↑ Menor score</option>
+          <option value="preco_asc">↑ Menor preço</option>
+          <option value="preco_desc">↓ Maior preço</option>
+          <option value="km_asc">↑ Menor KM</option>
+          <option value="novo_first">🆕 Recentes</option>
+        </select>
         <span id="result-count" style="font-size:.7rem;font-family:'DM Sans',sans-serif;font-weight:600;background:var(--od);color:var(--orange);padding:2px 8px;border-radius:10px;margin-left:.5rem">0</span>
       </div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
@@ -1963,7 +1975,16 @@ const StorageEngine = {
         if(filtros.uf)      results = results.filter(a => a.cidadeNorm === filtros.uf);
         if(filtros.maxKm)   results = results.filter(a => !a.kmNorm || a.kmNorm <= filtros.maxKm);
         if(filtros.maxPreco)results = results.filter(a => !a.precoNorm || a.precoNorm <= filtros.maxPreco);
-        results.sort((a,b) => (b.score||0) - (a.score||0));
+        // Sort by selected order
+        const sortSel = typeof document !== 'undefined' ? document.getElementById('sort-select') : null;
+        const sortVal = sortSel ? sortSel.value : 'score_desc';
+        if(sortVal === 'score_desc')  results.sort((a,b) => (b.score||b.opportunityScore||0) - (a.score||a.opportunityScore||0));
+        else if(sortVal === 'score_asc')  results.sort((a,b) => (a.score||a.opportunityScore||0) - (b.score||b.opportunityScore||0));
+        else if(sortVal === 'preco_asc')  results.sort((a,b) => (a.precoNorm||0) - (b.precoNorm||0));
+        else if(sortVal === 'preco_desc') results.sort((a,b) => (b.precoNorm||0) - (a.precoNorm||0));
+        else if(sortVal === 'km_asc')     results.sort((a,b) => (a.kmNorm||0) - (b.kmNorm||0));
+        else if(sortVal === 'novo_first') results.sort((a,b) => (b.novo?1:0) - (a.novo?1:0));
+        else results.sort((a,b) => (b.score||b.opportunityScore||0) - (a.score||a.opportunityScore||0));
         resolve(results);
       };
     });
@@ -2073,19 +2094,35 @@ const ResultEngine = {
           data-copy-p1="${a.p1||0}"
           data-copy-p2="${a.p2||0}"
           onclick="copiarP1ByBtn(this)"
+          style="font-size:.72rem;font-family:'DM Sans',sans-serif;font-weight:600;padding:5px 14px;border-radius:var(--r);border:1px solid #A78BFA;background:#A78BFA22;color:#A78BFA;cursor:pointer;white-space:nowrap">
+          💬 P1 Interesse
+        </button>
+        <button
+          data-copy-id="${a.id}"
+          data-copy-modelo="${(a.modeloNorm||a.modelo||'').replace(/['"<>&]/g,'')}"
+          data-copy-ano="${a.anoNorm||a.ano||''}"
+          data-copy-p1="${a.p1||0}"
+          data-copy-p2="${a.p2||0}"
+          onclick="copiarP2ByBtn(this)"
           style="font-size:.72rem;font-family:'DM Sans',sans-serif;font-weight:600;padding:5px 14px;border-radius:var(--r);border:1px solid #22C55E;background:#22C55E22;color:#22C55E;cursor:pointer;white-space:nowrap">
-          📋 Copiar P1
+          📋 P2 Proposta
         </button>
         <button
           data-copy-id="${a.id}"
           data-copy-modelo="${(a.modeloNorm||a.modelo||'').replace(/['"<>&]/g,'')}"
           data-copy-ano="${a.anoNorm||a.ano||''}"
           data-copy-p2="${a.p2||0}"
-          onclick="copiarP2ByBtn(this)"
+          onclick="copiarP3ByBtn(this)"
           style="font-size:.72rem;font-family:'DM Sans',sans-serif;font-weight:600;padding:5px 14px;border-radius:var(--r);border:1px solid #3B82F6;background:#3B82F622;color:#3B82F6;cursor:pointer;white-space:nowrap">
-          📋 Copiar P2
+          📋 P3 Contra
         </button>
-        <button onclick="removerAnuncio('${a.id}')"
+        <button
+          onclick="togglePropostaEnviada('${a.id}', this)"
+          data-enviada="${a.propostaEnviada ? '1' : '0'}"
+          style="font-size:.72rem;font-family:'DM Sans',sans-serif;font-weight:600;padding:5px 12px;border-radius:var(--r);border:1px solid ${a.propostaEnviada ? '#F59E0B' : 'var(--border2)'};background:${a.propostaEnviada ? '#F59E0B22' : 'transparent'};color:${a.propostaEnviada ? '#F59E0B' : 'var(--text3)'};cursor:pointer;white-space:nowrap">
+          ${a.propostaEnviada ? '✅ Enviada' : '📤 Marcar enviada'}
+        </button>
+        <button onclick="removerAnuncio('${a.id}')" 
           style="font-size:.65rem;padding:5px 10px;border-radius:var(--r);border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer">
           ✕
         </button>
@@ -2121,7 +2158,26 @@ const ResultEngine = {
         container.innerHTML = '<div style="color:var(--text3);font-size:.78rem;padding:1rem;text-align:center">Nenhum anúncio salvo ainda.<br>Execute uma busca pelo Cowork e importe os resultados.</div>';
         return;
       }
-      container.innerHTML = anuncios.map(a => this.renderCard(a)).join('');
+      // Apply sort from selector
+      const sortSel = document.getElementById('sort-select');
+      const sortVal = sortSel ? sortSel.value : 'score_desc';
+      const sorted = [...anuncios];
+      if(sortVal === 'score_desc')  sorted.sort((a,b) => (b.score||b.opportunityScore||0) - (a.score||a.opportunityScore||0));
+      else if(sortVal === 'score_asc')  sorted.sort((a,b) => (a.score||a.opportunityScore||0) - (b.score||b.opportunityScore||0));
+      else if(sortVal === 'preco_asc')  sorted.sort((a,b) => (a.precoNorm||0) - (b.precoNorm||0));
+      else if(sortVal === 'preco_desc') sorted.sort((a,b) => (b.precoNorm||0) - (a.precoNorm||0));
+      else if(sortVal === 'km_asc')     sorted.sort((a,b) => (a.kmNorm||0) - (b.kmNorm||0));
+      else if(sortVal === 'novo_first') sorted.sort((a,b) => (b.novo?1:0) - (a.novo?1:0));
+      container.innerHTML = sorted.map(a => this.renderCard(a)).join('');
+
+      // Update "propostas enviadas" badge
+      const enviadas = sorted.filter(a => a.propostaEnviada).length;
+      const badge = document.getElementById('badge-enviadas');
+      const countEl = document.getElementById('count-enviadas');
+      if(badge && countEl) {
+        countEl.textContent = enviadas;
+        badge.style.display = enviadas > 0 ? 'inline' : 'none';
+      }
       document.getElementById('result-count')?.setAttribute('data-count', anuncios.length);
     } catch(e) {
       container.innerHTML = '<div style="color:var(--orange);font-size:.78rem;padding:1rem">Erro ao carregar resultados.</div>';
@@ -2136,39 +2192,58 @@ const ResultEngine = {
 
 
 // Helper functions for cards
-async function copiarP2ByBtn(btn) {
+
+// ── P1: Abordagem humanizada inicial (sem proposta) ──
+function copiarP1ByBtn(btn) {
+  const modelo = btn.dataset.copyModelo || '';
+  const ano    = btn.dataset.copyAno    || '';
+  copiarMensagemP1(btn.dataset.copyId, modelo, ano);
+}
+
+function copiarMensagemP1(id, modelo, ano) {
+  modelo = modelo || '';
+  ano    = ano    || '';
+  const msg = 'Oi, tudo bem? Vi sua ' + modelo + ' ' + ano + ' anunciada e me interessei.' + '\n' + 'Você ainda está vendendo? Gostaria de conversar sobre ela, tenho interesse.';
+  if(navigator.clipboard) {
+    navigator.clipboard.writeText(msg).then(() => toast('✅ Mensagem P1 copiada!')).catch(() => fallbackCopy(msg));
+  } else { fallbackCopy(msg); }
+}
+
+// ── P2: Primeira proposta (era P1) ──
+function copiarP2ByBtn(btn) {
+  const modelo = btn.dataset.copyModelo || '';
+  const ano    = btn.dataset.copyAno    || '';
+  const p1     = Number(btn.dataset.copyP1) || 0;
+  copiarMensagemP2(btn.dataset.copyId, modelo, ano, p1);
+}
+
+function copiarMensagemP2(id, modelo, ano, p1) {
+  modelo = modelo || '';
+  ano    = ano    || '';
+  p1     = Number(p1) || 0;
+  const valorFmt = Number(p1).toLocaleString('pt-BR');
+  const msg = 'Olá, tudo bem? Vi seu anúncio da ' + modelo + ' ' + ano + ' e fiquei interessado.' + '\n\n' + 'Somos a 1903 Motorcycles, empresa especializada em compra e venda de motos Harley-Davidson em Curitiba/PR.' + '\n\n' + 'Conseguimos trabalhar próximos de R$ ' + valorFmt + ', dependendo da análise final da moto.' + '\n\n' + '✅ IPVA do ano vigente quitado e em dia\n✅ Revisões periódicas feitas conforme manual (por tempo ou KM)\n✅ Pneus em condição de uso, sem necessidade de troca imediata\n✅ Sem detalhes estéticos ou mecânicos pendentes\n✅ Documentação regularizada e pronta para transferência\n✅ Moto de origem particular — não proveniente de leilão, sinistro ou perda total\n⚠️ Qualquer pendência identificada será descontada do valor na hora do pagamento' + '\n\n' + 'Tem interesse em conversar?';
+  if(navigator.clipboard) {
+    navigator.clipboard.writeText(msg).then(() => toast('✅ Mensagem P2 copiada!')).catch(() => fallbackCopy(msg));
+  } else { fallbackCopy(msg); }
+}
+
+// ── P3: Segunda proposta após rejeição (era P2) ──
+function copiarP3ByBtn(btn) {
   const modelo = btn.dataset.copyModelo || '';
   const ano    = btn.dataset.copyAno    || '';
   const p2     = Number(btn.dataset.copyP2) || 0;
-  copiarMensagemP2(btn.dataset.copyId, modelo, ano, p2);
+  copiarMensagemP3(btn.dataset.copyId, modelo, ano, p2);
 }
 
-function copiarMensagemP2(id, modelo, ano, p2) {
+function copiarMensagemP3(id, modelo, ano, p2) {
   modelo = modelo || '';
   ano    = ano    || '';
   p2     = Number(p2) || 0;
   const valorFmt = Number(p2).toLocaleString('pt-BR');
   const msg = 'Entendi, sem problema.' + '\n\n' + 'Olhando com mais atenção o anúncio e considerando o perfil da moto, consigo trabalhar próximo de R$ ' + valorFmt + ', sujeito apenas à confirmação do estado geral na vistoria presencial.' + '\n\n' + 'Se a moto estiver conforme anunciado — bem cuidada, revisões em dia, pneus bons, sem detalhes relevantes e com histórico coerente — acredito que conseguimos avançar nesse valor.';
   if(navigator.clipboard) {
-    navigator.clipboard.writeText(msg).then(() => toast('✅ Mensagem P2 copiada!')).catch(() => fallbackCopy(msg));
-  } else { fallbackCopy(msg); }
-}
-
-function copiarP1ByBtn(btn) {
-  const modelo = btn.dataset.copyModelo || '';
-  const ano    = btn.dataset.copyAno    || '';
-  const p1     = Number(btn.dataset.copyP1) || 0;
-  copiarMensagemP1(btn.dataset.copyId, modelo, ano, p1);
-}
-
-function copiarMensagemP1(id, modelo, ano, p1) {
-  modelo = modelo || '';
-  ano    = ano    || '';
-  p1     = Number(p1) || 0;
-  const valorFmt = Number(p1).toLocaleString('pt-BR');
-  const msg = 'Olá, tudo bem? Vi seu anúncio da ' + modelo + ' ' + ano + ' e fiquei interessado.\n\nSomos a 1903 Motorcycles, empresa especializada em compra e venda de motos Harley-Davidson em Curitiba/PR.\n\nConseguimos trabalhar próximos de R$ ' + valorFmt + ', dependendo da análise final da moto.\n\n✅ IPVA do ano vigente quitado e em dia\n✅ Revisões periódicas feitas conforme manual (por tempo ou KM)\n✅ Pneus em condição de uso, sem necessidade de troca imediata\n✅ Sem detalhes estéticos ou mecânicos pendentes\n✅ Documentação regularizada e pronta para transferência\n✅ Moto de origem particular — não proveniente de leilão, sinistro ou perda total\n⚠️ Qualquer pendência identificada será descontada do valor na hora do pagamento\n\nTem interesse em conversar?';
-  if(navigator.clipboard) {
-    navigator.clipboard.writeText(msg).then(() => toast('✅ Mensagem P1 copiada!')).catch(() => fallbackCopy(msg));
+    navigator.clipboard.writeText(msg).then(() => toast('✅ Mensagem P3 copiada!')).catch(() => fallbackCopy(msg));
   } else { fallbackCopy(msg); }
 }
 function fallbackCopy(msg) {
@@ -2188,6 +2263,19 @@ async function processarProposta(id) {
     if(!a) return;
     toast(`💬 Gere o script de proposta para: ${a.modeloNorm} ${a.anoNorm}`);
   };
+}
+
+async function togglePropostaEnviada(id, btn) {
+  try {
+    const anuncios = await StorageEngine.getAll({});
+    const a = anuncios.find(x => x.id === id);
+    if(!a) return;
+    a.propostaEnviada = !a.propostaEnviada;
+    a.propostaEnviadaEm = a.propostaEnviada ? new Date().toLocaleString('pt-BR') : null;
+    await StorageEngine.save([a]);
+    await ResultEngine.renderAll();
+    toast(a.propostaEnviada ? '✅ Proposta marcada como enviada!' : '↩️ Marcação removida');
+  } catch(e) { toast('Erro ao marcar proposta'); }
 }
 
 async function removerAnuncio(id) {
